@@ -27,18 +27,16 @@ st.markdown("""
     .stButton > button:hover { background-color:#0d5e57; }
 </style>""", unsafe_allow_html=True)
 
-# ── Validação de CPF ──────────────────────────────────────────────────────────
+# ── Utilitários ───────────────────────────────────────────────────────────────
 def validar_cpf(cpf: str) -> bool:
     cpf = ''.join(filter(str.isdigit, cpf))
     if len(cpf) != 11 or cpf == cpf[0] * 11:
         return False
     soma = sum(int(cpf[i]) * (10 - i) for i in range(9))
-    d1 = (soma * 10 % 11) % 10
-    if d1 != int(cpf[9]):
+    if (soma * 10 % 11) % 10 != int(cpf[9]):
         return False
     soma = sum(int(cpf[i]) * (11 - i) for i in range(10))
-    d2 = (soma * 10 % 11) % 10
-    return d2 == int(cpf[10])
+    return (soma * 10 % 11) % 10 == int(cpf[10])
 
 def fmt_cpf(cpf: str) -> str:
     cpf = ''.join(filter(str.isdigit, cpf))
@@ -54,7 +52,11 @@ def tel_com_ddi(tel):
     t = ''.join(filter(str.isdigit, tel))
     return ("55" + t) if not t.startswith("55") else t
 
-# ── Funções de banco ──────────────────────────────────────────────────────────
+def link_wa(telefone, nome, msg):
+    tel = tel_com_ddi(telefone)
+    return f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
+
+# ── Banco ─────────────────────────────────────────────────────────────────────
 def buscar_associados():
     return db.table("assoc_associados").select("*").eq("ativo", True).order("nome").execute().data or []
 
@@ -66,12 +68,7 @@ def buscar_por_cpf(cpf):
         return db.table("assoc_associados").select("*").eq("cpf", ''.join(filter(str.isdigit, cpf))).single().execute().data
     except: return None
 
-def link_wa(telefone, nome, ano, valor):
-    tel = tel_com_ddi(telefone)
-    msg = f"Olá {nome}, confirmamos sua anuidade {ano}. Valor: R$ {valor:.2f}. Obrigado! 🤝"
-    return f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
-
-# ── Cabeçalho e métricas ──────────────────────────────────────────────────────
+# ── Cabeçalho ─────────────────────────────────────────────────────────────────
 st.title("🤝 Controle de Associação")
 st.caption(f"Ano de referência: **{ANO_ATUAL}**")
 
@@ -86,13 +83,19 @@ c3.metric("❌ Inadimplentes", sum(1 for a in associados if a["id"] not in ids_p
 c4.metric("💰 Arrecadado", f"R$ {sum(p['valor'] for p in pagamentos):,.2f}")
 st.markdown("---")
 
-# ── Abas ─────────────────────────────────────────────────────────────────────
-aba1, aba2, aba3, aba4 = st.tabs(["📋 Painel Geral","➕ Cadastrar Associado","💳 Registrar Pagamento","📊 Histórico"])
+# ── Abas ──────────────────────────────────────────────────────────────────────
+aba1, aba2, aba3, aba4, aba5 = st.tabs([
+    "📋 Painel Geral",
+    "➕ Cadastrar Associado",
+    "🚀 Gerar Anuidade",
+    "💳 Registrar Pagamento",
+    "📊 Histórico",
+])
 
 # ═══ ABA 1 — PAINEL GERAL ════════════════════════════════════════════════════
 with aba1:
     st.subheader("Status de Anuidade")
-    filtro = st.selectbox("Filtrar:", ["Todos","Pagos","Inadimplentes"])
+    filtro = st.selectbox("Filtrar:", ["Todos", "Pagos", "Inadimplentes"])
     linhas = []
     for a in associados:
         pago = a["id"] in ids_pagos
@@ -100,13 +103,14 @@ with aba1:
         if filtro == "Inadimplentes" and pago: continue
         pg = next((p for p in pagamentos if p["associado_id"] == a["id"]), None)
         linhas.append({
-            "Nome": a["nome"], "CPF": fmt_cpf(a["cpf"]),
-            "Telefone": a.get("telefone") or "—",
-            "Status": "✅ Pago" if pago else "❌ Pendente",
-            "Valor Pago": f"R$ {pg['valor']:.2f}" if pg else "—",
-            "Data": fmt_data(pg["data_pagamento"]) if pg else "—",
-            "Forma": pg["forma"] if pg else "—",
-            "_tel": tel_com_ddi(a.get("telefone")),
+            "Nome":       a["nome"],
+            "CPF":        fmt_cpf(a["cpf"]),
+            "Telefone":   a.get("telefone") or "—",
+            "Status":     "✅ Pago" if pago else "❌ Pendente",
+            "Valor":      f"R$ {pg['valor']:.2f}" if pg else "—",
+            "Data":       fmt_data(pg["data_pagamento"]) if pg else "—",
+            "Forma":      pg["forma"] if pg else "—",
+            "_tel":       tel_com_ddi(a.get("telefone")),
         })
     if not linhas:
         st.info("Nenhum resultado.")
@@ -134,9 +138,9 @@ with aba2:
         st.markdown("**Dados Pessoais**")
         ca1, ca2 = st.columns(2)
         with ca1:
-            nome    = st.text_input("Nome completo *")
-            cpf_in  = st.text_input("CPF * (somente números)")
-            tel_in  = st.text_input("DDD + Telefone * (ex: 17999998888)")
+            nome   = st.text_input("Nome completo *")
+            cpf_in = st.text_input("CPF * (somente números)")
+            tel_in = st.text_input("DDD + Telefone * (ex: 17999998888)")
         with ca2:
             nasc = st.date_input("Data de nascimento", value=None,
                                  min_value=date(1920,1,1), max_value=date.today(),
@@ -160,10 +164,10 @@ with aba2:
 
         if st.form_submit_button("✅ Salvar Associado"):
             erros = []
-            if not nome:               erros.append("Nome é obrigatório.")
-            if not cpf_in:             erros.append("CPF é obrigatório.")
+            if not nome:                  erros.append("Nome é obrigatório.")
+            if not cpf_in:                erros.append("CPF é obrigatório.")
             elif not validar_cpf(cpf_in): erros.append("CPF inválido.")
-            if not tel_in:             erros.append("Telefone é obrigatório.")
+            if not tel_in:                erros.append("Telefone é obrigatório.")
             if erros:
                 for e in erros: st.error(e)
             else:
@@ -182,8 +186,8 @@ with aba2:
                         "nascimento": str(nasc) if nasc else None,
                         "endereco":   ", ".join(partes) if partes else None,
                     }).execute()
-                    st.session_state.cadastro_ok  = True
-                    st.session_state.ultimo_nome  = nome.strip().title()
+                    st.session_state.cadastro_ok = True
+                    st.session_state.ultimo_nome = nome.strip().title()
                     st.rerun()
                 except Exception as e:
                     if "unique" in str(e).lower() or "duplicate" in str(e).lower():
@@ -205,9 +209,99 @@ with aba2:
     else:
         st.info("Nenhum associado cadastrado ainda.")
 
-# ═══ ABA 3 — PAGAMENTO ═══════════════════════════════════════════════════════
+# ═══ ABA 3 — GERAR ANUIDADE ══════════════════════════════════════════════════
 with aba3:
+    st.subheader("🚀 Gerar Anuidade para Todos os Associados")
+    st.info(
+        "Esta função lança a anuidade para **todos os associados ativos** de uma vez. "
+        "Quem já tiver pagamento registrado no ano selecionado será ignorado automaticamente."
+    )
+
+    with st.form("form_gerar_anuidade"):
+        cg1, cg2, cg3 = st.columns(3)
+        with cg1:
+            ano_gerar  = st.number_input("Ano de referência", 2020, 2030, ANO_ATUAL)
+        with cg2:
+            valor_anuid = st.number_input("Valor da anuidade (R$)", min_value=0.01, step=0.01, format="%.2f")
+        with cg3:
+            vencimento = st.date_input("Data de vencimento", value=date(ANO_ATUAL, 12, 31), format="DD/MM/YYYY")
+
+        enviar_wa = st.checkbox("📲 Mostrar links WhatsApp para notificar os associados após gerar")
+
+        gerar = st.form_submit_button("🚀 Gerar Anuidade para Todos")
+
+        if gerar:
+            if valor_anuid <= 0:
+                st.error("Informe um valor válido.")
+            else:
+                # Busca quem já tem lançamento nesse ano
+                pgs_ano = buscar_pagamentos_ano(int(ano_gerar))
+                ids_ja_lancados = {p["associado_id"] for p in pgs_ano}
+
+                todos = buscar_associados()
+                pendentes = [a for a in todos if a["id"] not in ids_ja_lancados]
+
+                if not pendentes:
+                    st.warning(f"⚠️ Todos os associados já possuem anuidade lançada para {int(ano_gerar)}.")
+                else:
+                    # Lança em lote
+                    registros = [{
+                        "associado_id":   a["id"],
+                        "ano_referencia": int(ano_gerar),
+                        "valor":          float(valor_anuid),
+                        "data_pagamento": str(vencimento),
+                        "forma":          "PIX",
+                        "observacao":     f"Anuidade {int(ano_gerar)} gerada em lote",
+                    } for a in pendentes]
+
+                    try:
+                        db.table("assoc_pagamentos").insert(registros).execute()
+                        st.success(f"✅ Anuidade {int(ano_gerar)} gerada para **{len(pendentes)} associados**! Valor: R$ {valor_anuid:.2f}")
+
+                        # Tabela de quem recebeu o lançamento
+                        st.markdown("### Associados com anuidade lançada:")
+                        df_gerados = pd.DataFrame([{
+                            "Nome":     a["nome"],
+                            "CPF":      fmt_cpf(a["cpf"]),
+                            "Telefone": a.get("telefone") or "—",
+                        } for a in pendentes])
+                        st.dataframe(df_gerados, use_container_width=True, hide_index=True)
+
+                        # Links WhatsApp opcionais
+                        if enviar_wa:
+                            st.markdown("### 📲 Notificar pelo WhatsApp")
+                            for a in pendentes:
+                                if a.get("telefone"):
+                                    msg = (
+                                        f"Olá {a['nome']}, sua anuidade {int(ano_gerar)} foi gerada. "
+                                        f"Valor: R$ {valor_anuid:.2f}. "
+                                        f"Vencimento: {vencimento.strftime('%d/%m/%Y')}. "
+                                        f"Obrigado! 🤝"
+                                    )
+                                    tel = tel_com_ddi(a["telefone"])
+                                    st.markdown(f"[📲 {a['nome']}](https://wa.me/{tel}?text={urllib.parse.quote(msg)})")
+
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao gerar anuidades: {e}")
+
+    # Resumo do ano selecionado
+    st.markdown("---")
+    st.subheader(f"📊 Situação atual — {ANO_ATUAL}")
+    todos_ativos = buscar_associados()
+    pgs_atual    = buscar_pagamentos_ano(ANO_ATUAL)
+    ids_lancados = {p["associado_id"] for p in pgs_atual}
+
+    col_r1, col_r2, col_r3 = st.columns(3)
+    col_r1.metric("Total de associados",   len(todos_ativos))
+    col_r2.metric("Com anuidade lançada",  len(ids_lancados))
+    col_r3.metric("Sem lançamento ainda",  len(todos_ativos) - len(ids_lancados))
+
+# ═══ ABA 4 — REGISTRAR PAGAMENTO AVULSO ══════════════════════════════════════
+with aba4:
     st.subheader("Registrar Pagamento de Anuidade")
+    st.caption("Use aqui para registrar quando um associado efetuar o pagamento.")
+
     cpf_busca = st.text_input("CPF do associado (somente números)", key="cpf_pg")
     assoc_enc = None
     if cpf_busca:
@@ -216,7 +310,7 @@ with aba3:
             st.success(f"✅ Encontrado: **{assoc_enc['nome']}**")
             if assoc_enc["id"] in ids_pagos:
                 pg = next((p for p in pagamentos if p["associado_id"] == assoc_enc["id"]), None)
-                st.warning(f"⚠️ Já pagou em {fmt_data(pg['data_pagamento'])} — R$ {pg['valor']:.2f} via {pg['forma']}")
+                st.warning(f"⚠️ Já consta pagamento em {fmt_data(pg['data_pagamento'])} — R$ {pg['valor']:.2f} via {pg['forma']}")
         else:
             st.error("❌ CPF não encontrado.")
 
@@ -237,17 +331,21 @@ with aba3:
                 st.error("Valor inválido.")
             else:
                 db.table("assoc_pagamentos").insert({
-                    "associado_id": assoc_enc["id"], "ano_referencia": int(ano_ref),
-                    "valor": float(valor), "data_pagamento": str(data_pg),
-                    "forma": forma, "observacao": obs or None,
+                    "associado_id":   assoc_enc["id"],
+                    "ano_referencia": int(ano_ref),
+                    "valor":          float(valor),
+                    "data_pagamento": str(data_pg),
+                    "forma":          forma,
+                    "observacao":     obs or None,
                 }).execute()
                 st.success(f"✅ Pagamento registrado para **{assoc_enc['nome']}**!")
                 if assoc_enc.get("telefone"):
-                    st.markdown(f"[📲 Enviar confirmação WhatsApp]({link_wa(assoc_enc['telefone'], assoc_enc['nome'], ano_ref, valor)})")
+                    msg = f"Olá {assoc_enc['nome']}, confirmamos sua anuidade {int(ano_ref)}. Valor: R$ {valor:.2f}. Obrigado! 🤝"
+                    st.markdown(f"[📲 Enviar confirmação WhatsApp]({link_wa(assoc_enc['telefone'], assoc_enc['nome'], msg)})")
                 st.rerun()
 
-# ═══ ABA 4 — HISTÓRICO ═══════════════════════════════════════════════════════
-with aba4:
+# ═══ ABA 5 — HISTÓRICO ═══════════════════════════════════════════════════════
+with aba5:
     st.subheader("Histórico de Pagamentos")
     ano_hist = st.selectbox("Ano:", list(range(ANO_ATUAL, 2019, -1)))
     pgs = db.table("assoc_pagamentos").select("*, assoc_associados(nome,cpf)").eq("ano_referencia", ano_hist).order("data_pagamento", desc=True).execute().data or []
@@ -261,7 +359,7 @@ with aba4:
             "Obs":   p.get("observacao") or "—",
         } for p in pgs])
         st.dataframe(df_h, use_container_width=True, hide_index=True)
-        st.metric("Total arrecadado", f"R$ {sum(p['valor'] for p in pgs):,.2f}")
+        st.metric("Total lançado", f"R$ {sum(p['valor'] for p in pgs):,.2f}")
         st.download_button(f"⬇️ Exportar {ano_hist}", df_h.to_csv(index=False).encode("utf-8"), f"pagamentos_{ano_hist}.csv", "text/csv")
     else:
-        st.info(f"Nenhum pagamento em {ano_hist}.")
+        st.info(f"Nenhum registro em {ano_hist}.")
