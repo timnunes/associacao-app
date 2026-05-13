@@ -13,14 +13,18 @@ st.set_page_config(
     layout="wide"
 )
 
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"].strip()
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"].strip()
+except Exception:
+    st.error("❌ Secrets não encontrados. Configure SUPABASE_URL e SUPABASE_KEY.")
+    st.stop()
 
-@st.cache_resource
-def get_client():
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
-
-db = get_client()
+try:
+    db = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.error(f"❌ Erro ao conectar no Supabase: {e}")
+    st.stop()
 ANO_ATUAL = datetime.now().year
 
 # ─────────────────────────────────────────────
@@ -189,16 +193,19 @@ with aba2:
             if not nome or not cpf:
                 st.error("Nome e CPF são obrigatórios.")
             else:
-                cpf_limpo = cpf.replace(".", "").replace("-", "")
+                cpf_limpo  = ''.join(filter(str.isdigit, cpf))
+                nome_fmt   = nome.strip().title()
+                tel_fmt    = ''.join(filter(str.isdigit, telefone)) if telefone else None
+                end_fmt    = endereco.strip().title() if endereco else None
                 try:
                     db.table("assoc_associados").insert({
-                        "nome": nome.strip(),
-                        "cpf": cpf_limpo,
-                        "telefone": telefone.strip() if telefone else None,
+                        "nome":       nome_fmt,
+                        "cpf":        cpf_limpo,
+                        "telefone":   tel_fmt,
                         "nascimento": str(nascimento) if nascimento else None,
-                        "endereco": endereco.strip() if endereco else None,
+                        "endereco":   end_fmt,
                     }).execute()
-                    st.success(f"✅ Associado **{nome}** cadastrado com sucesso!")
+                    st.success(f"✅ Associado **{nome_fmt}** cadastrado com sucesso!")
                     st.cache_resource.clear()
                 except Exception as e:
                     if "duplicate" in str(e).lower() or "unique" in str(e).lower():
