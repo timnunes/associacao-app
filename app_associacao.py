@@ -194,7 +194,7 @@ with aba2:
                 uf = st.selectbox("Estado",[
                     "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
                     "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"
-                ], index=25)
+                ], index=24)
             with ccep:
                 cep = st.text_input("CEP")
 
